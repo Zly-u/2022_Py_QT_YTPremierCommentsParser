@@ -28,6 +28,7 @@ def progressBar(name, index, amount_of_imgs, start_time):
         )
     )
 
+
 avatar_placehokders = os.listdir("avyPlaceholders")
 avatars_cache: dict[QPixmap] = {}
 class Window(QtWidgets.QMainWindow):
@@ -62,8 +63,7 @@ class Window(QtWidgets.QMainWindow):
                 user_action = comment["replayChatItemAction"]["actions"][0]
                 user_item   = user_action.get("addChatItemAction", None)                    # if none - It's a deleted message
 
-                did_Avy_Repeat = False
-                did_msg_delete = False
+                prefix_for_progressBar = ''
                 new_json_comment = None
                 if user_item:
                     user_info   = user_item["item"].get("liveChatTextMessageRenderer", None)    # if none - it's a system message
@@ -98,6 +98,7 @@ class Window(QtWidgets.QMainWindow):
                         avatars_cache[new_json_comment["author_name"]] = avy_img
                     else:
                         did_Avy_Repeat = True
+                        prefix_for_progressBar = '^'
 
                 else:
                     new_json_comment = {
@@ -105,9 +106,9 @@ class Window(QtWidgets.QMainWindow):
                         "message": user_action["markChatItemAsDeletedAction"]["deletedStateMessage"]["runs"][0]["text"],
                         "avatar": None
                     }
-                    did_msg_delete = True
+                    prefix_for_progressBar = '#'
 
-                progressBar("Creating comments"+(("^" if did_Avy_Repeat else "") if not did_msg_delete else "#"), i, lines_len if limit == -1 else limit, start_time)
+                progressBar("Creating comments"+prefix_for_progressBar, i, lines_len if limit == -1 else limit, start_time)
 
                 cur_iteration += 1
                 yield new_json_comment
@@ -153,11 +154,6 @@ class Window(QtWidgets.QMainWindow):
             avy_label_image.setScaledContents(True)
             author_name = None
             if avy_url:
-                # avy_req = request.Request(avy_url)
-                # avy_img_raw = request.urlopen(avy_req).read()
-                # avy_img = QPixmap()
-                # avy_img.loadFromData(avy_img_raw)
-
                 avy_label_image.setPixmap(avatars_cache[comment["author_name"]])
                 avy_label_image.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
                 avy_label_image.setFixedSize(64 - 6, 64 - 6)
@@ -213,7 +209,7 @@ class Window(QtWidgets.QMainWindow):
             scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
             # Create each comment
-            co_getComment = self.parseJSON(file, limit=1000)
+            co_getComment = self.parseJSON(file, limit=-1)
             while True:
                 try:
                     comment = next(co_getComment)
