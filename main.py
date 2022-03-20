@@ -31,6 +31,75 @@ def progressBar(name, index, amount_of_imgs, start_time):
 
 avatar_placehokders = os.listdir("avyPlaceholders")
 avatars_cache: dict[QPixmap] = {}
+
+
+def parseJSON(file_name, limit=-1):
+    temp_json = None
+    cur_iteration = 0
+    start_time = datetime.datetime.now()
+    with open(file_name, "r", encoding="utf-8") as comments:
+        lines = comments.readlines()
+        lines_len = len(lines)
+        for i, line in enumerate(lines, start=1):
+            if limit != -1 and cur_iteration >= limit: break
+            comment = json.loads(line)
+
+            user_action = comment["replayChatItemAction"]["actions"][0]
+            user_item = user_action.get("addChatItemAction", None)  # if none - It's a deleted message
+
+            prefix_for_progressBar = ''
+            new_json_comment = None
+            if user_item:
+                user_info = user_item["item"].get("liveChatTextMessageRenderer",
+                                                  None)  # if none - it's a system message
+                if not user_info:
+                    cur_iteration += 1
+                    progressBar("Creating comments*", i, lines_len if limit == -1 else limit, start_time)
+                    continue
+
+                found_messag = user_info["message"]["runs"][0].get("text", None)
+                if not found_messag and len(user_info["message"]["runs"]) > 1:
+                    for element in user_info["message"]["runs"][1:]:
+                        found_messag = element.get("text", None)
+                        if found_messag: break
+
+                if not found_messag:
+                    cur_iteration += 1
+                    progressBar("Creating comments*", i, lines_len if limit == -1 else limit, start_time)
+                    continue
+
+                new_json_comment = {
+                    "author_name": user_info["authorName"]["simpleText"],
+                    "message": found_messag,
+                    "avatar": user_info["authorPhoto"]["thumbnails"][0]["url"]  # 0 is 32x32, 1 is 64x64
+                }
+
+                if not avatars_cache.get(new_json_comment["author_name"], None):
+                    avy_req = request.Request(new_json_comment["avatar"])
+                    avy_img_raw = request.urlopen(avy_req).read()
+                    avy_img = QPixmap()
+                    avy_img.loadFromData(avy_img_raw)
+
+                    avatars_cache[new_json_comment["author_name"]] = avy_img
+                else:
+                    did_Avy_Repeat = True
+                    prefix_for_progressBar = '^'
+
+            else:
+                new_json_comment = {
+                    "author_name": None,
+                    "message": user_action["markChatItemAsDeletedAction"]["deletedStateMessage"]["runs"][0]["text"],
+                    "avatar": None
+                }
+                prefix_for_progressBar = '#'
+
+            progressBar("Creating comments" + prefix_for_progressBar, i, lines_len if limit == -1 else limit,
+                        start_time)
+
+            cur_iteration += 1
+            yield new_json_comment
+
+
 class Window(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super(Window, self).__init__(parent=parent)
@@ -47,71 +116,6 @@ class Window(QtWidgets.QMainWindow):
         self.scroll_area_VB = None
 
         self.setupUI()
-
-
-    def parseJSON(self, file_name, limit=-1):
-        temp_json = None
-        cur_iteration = 0
-        start_time = datetime.datetime.now()
-        with open(file_name, "r", encoding="utf-8") as comments:
-            lines = comments.readlines()
-            lines_len = len(lines)
-            for i, line in enumerate(lines, start=1):
-                if limit != -1 and cur_iteration >= limit: break
-                comment = json.loads(line)
-
-                user_action = comment["replayChatItemAction"]["actions"][0]
-                user_item   = user_action.get("addChatItemAction", None)                    # if none - It's a deleted message
-
-                prefix_for_progressBar = ''
-                new_json_comment = None
-                if user_item:
-                    user_info   = user_item["item"].get("liveChatTextMessageRenderer", None)    # if none - it's a system message
-                    if not user_info:
-                        cur_iteration += 1
-                        progressBar("Creating comments*", i, lines_len if limit == -1 else limit, start_time)
-                        continue
-
-                    found_messag = user_info["message"]["runs"][0].get("text", None)
-                    if not found_messag and len(user_info["message"]["runs"]) > 1:
-                        for element in user_info["message"]["runs"][1:]:
-                            found_messag = element.get("text", None)
-                            if found_messag: break
-
-                    if not found_messag:
-                        cur_iteration += 1
-                        progressBar("Creating comments*", i, lines_len if limit == -1 else limit, start_time)
-                        continue
-
-                    new_json_comment = {
-                        "author_name": user_info["authorName"]["simpleText"],
-                        "message": found_messag,
-                        "avatar": user_info["authorPhoto"]["thumbnails"][0]["url"] # 0 is 32x32, 1 is 64x64
-                    }
-
-                    if not avatars_cache.get(new_json_comment["author_name"], None):
-                        avy_req = request.Request(new_json_comment["avatar"])
-                        avy_img_raw = request.urlopen(avy_req).read()
-                        avy_img = QPixmap()
-                        avy_img.loadFromData(avy_img_raw)
-
-                        avatars_cache[new_json_comment["author_name"]] = avy_img
-                    else:
-                        did_Avy_Repeat = True
-                        prefix_for_progressBar = '^'
-
-                else:
-                    new_json_comment = {
-                        "author_name": None,
-                        "message": user_action["markChatItemAsDeletedAction"]["deletedStateMessage"]["runs"][0]["text"],
-                        "avatar": None
-                    }
-                    prefix_for_progressBar = '#'
-
-                progressBar("Creating comments"+prefix_for_progressBar, i, lines_len if limit == -1 else limit, start_time)
-
-                cur_iteration += 1
-                yield new_json_comment
 
 
     def makeComment(self, comment):
@@ -209,7 +213,7 @@ class Window(QtWidgets.QMainWindow):
             scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
             # Create each comment
-            co_getComment = self.parseJSON(file, limit=-1)
+            co_getComment = parseJSON(file, limit=-1)
             while True:
                 try:
                     comment = next(co_getComment)
@@ -220,18 +224,25 @@ class Window(QtWidgets.QMainWindow):
         self.main_layout.addWidget(scroll_area)
 
 
-def main():
+# def main():
+#     app = QtWidgets.QApplication(sys.argv)
+#     window = Window()
+#     window.show()
+#
+#     status = app.exec_()
+#     sys.exit(status)
+#     parseJSON("mc_live.json")
+#
+# main()
+
+
+if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     window = Window()
     window.show()
 
     status = app.exec_()
     sys.exit(status)
-
-main()
-
-
-
 
 
 
